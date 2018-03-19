@@ -7,15 +7,19 @@ import (
 	"math/rand"
 	"math"
 	"hash"
+	"encoding/binary"
+	"bytes"
 )
 
 var (
 	ln2InSquare = math.Ln2 * math.Ln2
+	byteOrder = binary.LittleEndian
 )
 
 type BloomFilter interface {
 	Add(val []byte)
 	Test(val []byte) bool
+	Bytes() []byte
 }
 
 type bloomFilter struct {
@@ -23,16 +27,58 @@ type bloomFilter struct {
 	k int
 	bits bitset.BitSet
 	hashers []hash.Hash64
+	seeds []uint32
 }
 
 func New(count uint) BloomFilter {
 	m, k := optimalMAndK(count, 0.0001)
 	hashers := make([]hash.Hash64, k)
+	seeds := make([]uint32, k)
 	for i := 0; i < k; i++ {
-		hashers[i] = newHasher()
+		seeds[i] = rand.Uint32()
+		hashers[i] = murmur3.New64WithSeed(seeds[i])
 	}
 
-	return bloomFilter{m:uint64(m), k:k, bits: bitset.New(m), hashers:hashers}
+	return bloomFilter{m:uint64(m), k:k, bits: bitset.New(m), hashers:hashers, seeds: seeds}
+}
+
+
+func Load(b []byte) (BloomFilter, error) {
+	var (
+		err error
+		seeds []uint32
+		bits []byte
+	)
+	r := bytes.NewReader(b)
+	err = binary.Read(r, byteOrder, &seeds)
+	if err != nil {
+		return nil, err
+	}
+
+	err = binary.Read(r, byteOrder, &bits)
+	if err !=nil {
+		return nil, err
+	}
+
+	set, err := bitset.Load(bits)
+	if err != nil {
+		return nil, err
+	}
+
+	hashers := make([]hash.Hash64, len(seeds))
+	for i, seed := range seeds {
+		hashers[i] = murmur3.New64WithSeed(seed)
+	}
+
+	return bloomFilter{bits: set, seeds: seeds, hashers:hashers}, nil
+}
+
+func (bf bloomFilter) Bytes() []byte {
+	b := bytes.NewBuffer(nil)
+	binary.Write(b, byteOrder, bf.seeds)
+	binary.Write(b, byteOrder, bf.bits.Bytes())
+
+	return b.Bytes()
 }
 
 func (bf bloomFilter) Add(val []byte) {
@@ -55,13 +101,10 @@ func (bf bloomFilter) Test(val []byte) bool {
 	return true
 }
 
+
 func optimalMAndK(maxCount uint, errorProb float64) (int, int) {
 	m := - (float64(maxCount) * math.Log(errorProb))/ln2InSquare
 	k := (m/float64(maxCount)) * math.Ln2
 
 	return utils.Round(m), utils.Round(k)
-}
-
-func newHasher() hash.Hash64 {
-	return murmur3.New64WithSeed(rand.Uint32())
 }

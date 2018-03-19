@@ -1,6 +1,10 @@
 package bitset
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"encoding/binary"
+	"bytes"
+)
 
 const (
 	Zero uint32 = 0
@@ -11,15 +15,24 @@ type BitSet interface {
 	Set(pos uint64, val uint32)
 	IsOne(pos uint64) bool
 	IsZero(pos uint64) bool
+	Bytes() []byte
 }
 
 type bitset struct {
 	bits []uint32
+	size int
 }
 
 func New(size int) BitSet {
-	b := bitset{bits: make([]uint32, size)}
+	b := bitset{bits: make([]uint32, size), size: size}
 	return b
+}
+
+func Load(b []byte) (BitSet, error) {
+	var bits []uint32
+	r := bytes.NewReader(b)
+	err := binary.Read(r, binary.LittleEndian, &bits)
+	return bitset{bits: bits, size: len(b)}, err
 }
 
 func (b bitset) Set(pos uint64, val uint32) {
@@ -36,16 +49,14 @@ func (b bitset) IsZero(pos uint64) bool {
 	return val  == Zero
 }
 
-func (b bitset) String() string {
-	ret := ""
-	size := len(b.bits)
-	for i := 0; i < size; i++ {
-		if b.IsZero(uint64(i)) {
-			ret += "0"
-		} else {
-			ret += "1"
-		}
+func (b bitset) Bytes() []byte {
+	ret := make([]uint32, b.size)
+	for i := 0; i < b.size; i++ {
+		ret[i] = atomic.LoadUint32(&b.bits[i])
 	}
 
-	return ret
+	blob := bytes.NewBuffer(nil)
+	binary.Write(blob, binary.LittleEndian, ret)
+
+	return blob.Bytes()
 }
