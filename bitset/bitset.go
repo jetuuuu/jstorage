@@ -29,10 +29,18 @@ func New(size int) BitSet {
 }
 
 func Load(b []byte) (BitSet, error) {
-	var bits []uint32
+	var (
+		size int32
+		bits []uint32
+	)
 	r := bytes.NewReader(b)
-	err := binary.Read(r, binary.LittleEndian, &bits)
-	return bitset{bits: bits, size: len(b)}, err
+	err := binary.Read(r, binary.LittleEndian, &size)
+	if err == nil {
+		bits = make([]uint32, size)
+		err = binary.Read(r, binary.LittleEndian, bits)
+	}
+
+	return bitset{bits: bits, size: int(size)}, err
 }
 
 func (b bitset) Set(pos uint64, val uint32) {
@@ -56,6 +64,7 @@ func (b bitset) Bytes() []byte {
 	}
 
 	blob := bytes.NewBuffer(nil)
+	binary.Write(blob, binary.LittleEndian, int32(b.size))
 	binary.Write(blob, binary.LittleEndian, ret)
 
 	return blob.Bytes()

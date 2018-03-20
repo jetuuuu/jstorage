@@ -46,10 +46,17 @@ func New(count uint) BloomFilter {
 func Load(b []byte) (BloomFilter, error) {
 	var (
 		err error
+		k int32
 		seeds []uint32
 		bits []byte
 	)
 	r := bytes.NewReader(b)
+	err = binary.Read(r, byteOrder, &k)
+	if err != nil {
+		return nil, err
+	}
+
+	seeds = make([]uint32, k)
 	err = binary.Read(r, byteOrder, &seeds)
 	if err != nil {
 		return nil, err
@@ -75,6 +82,8 @@ func Load(b []byte) (BloomFilter, error) {
 
 func (bf bloomFilter) Bytes() []byte {
 	b := bytes.NewBuffer(nil)
+
+	binary.Write(b, byteOrder, int32(bf.k))
 	binary.Write(b, byteOrder, bf.seeds)
 	binary.Write(b, byteOrder, bf.bits.Bytes())
 
