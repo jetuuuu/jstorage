@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"encoding/binary"
-	"math/rand"
 	"github.com/spaolacci/murmur3"
 	"github.com/jetuuuu/jstorage/bloom"
 )

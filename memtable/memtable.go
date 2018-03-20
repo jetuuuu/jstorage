@@ -1,18 +1,18 @@
 package memtable
 
 import (
-	"sync"
 	"github.com/jetuuuu/jstorage/disktable"
+	"github.com/jetuuuu/jstorage/utils/spinlock"
 )
 
 type MemTable struct {
-	sync.RWMutex
+	s *spinlock.SpinLock
 	m map[string][]byte
 	currentSize int
 }
 
 func New() *MemTable {
-	return &MemTable{sync.RWMutex{}, make(map[string][]byte), 0}
+	return &MemTable{s: spinlock.New(), m: make(map[string][]byte), currentSize: 0}
 }
 
 func (mt MemTable) flush() disktable.DiskTable {
@@ -23,15 +23,15 @@ func (mt MemTable) flush() disktable.DiskTable {
 
 
 func (mt *MemTable) Set(key string, value []byte) {
-	mt.Lock()
+	mt.s.Lock()
 	mt.m[key] = value
 	mt.currentSize += len(key) + len(value)
-	mt.Unlock()
+	mt.s.Unlock()
 }
 
 func (mt MemTable) Get(key string) ([]byte, bool) {
-	mt.RLock()
+	mt.s.Lock()
 	val, ok := mt.m[key]
-	mt.RUnlock()
+	mt.s.Unlock()
 	return val, ok
 }
