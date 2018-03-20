@@ -20,6 +20,7 @@ type BloomFilter interface {
 	Add(val []byte)
 	Test(val []byte) bool
 	Bytes() []byte
+	Size() uint64
 }
 
 type bloomFilter struct {
@@ -78,6 +79,10 @@ func Load(b []byte) (BloomFilter, error) {
 	}
 
 	return bloomFilter{bits: set, seeds: seeds, hashers:hashers}, nil
+}
+
+func (bf bloomFilter) Size() uint64 {
+	return bf.m
 }
 
 func (bf bloomFilter) Bytes() []byte {

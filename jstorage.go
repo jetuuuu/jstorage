@@ -2,14 +2,14 @@ package jstoradge
 
 import (
 	"github.com/jetuuuu/jstorage/memtable"
-	"github.com/jetuuuu/jstorage/sstable"
+	"github.com/jetuuuu/jstorage/disktable"
 )
 
 const maxSize  =	100
 
 type Jstorage struct {
 	m *memtable.MemTable
-	sstables []*sstable.SStable
+	sstables []*disktable.DiskTable
 }
 
 func New() Jstorage {

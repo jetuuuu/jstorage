@@ -2,7 +2,7 @@ package memtable
 
 import (
 	"sync"
-	"github.com/jetuuuu/jstorage/sstable"
+	"github.com/jetuuuu/jstorage/disktable"
 )
 
 type MemTable struct {
@@ -15,8 +15,8 @@ func New() *MemTable {
 	return &MemTable{sync.RWMutex{}, make(map[string][]byte), 0}
 }
 
-func (mt MemTable) flush() sstable.SStable {
-	table := sstable.New(nil)
+func (mt MemTable) flush() disktable.DiskTable {
+	table := disktable.New(nil)
 	table.Flush()
 	return table
 }

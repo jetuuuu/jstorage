@@ -1,4 +1,4 @@
-package sstable
+package disktable
 
 
 type indexes map[string]int
