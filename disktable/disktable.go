@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"github.com/spaolacci/murmur3"
 	"github.com/jetuuuu/jstorage/bloom"
+	"github.com/jetuuuu/jstorage/item"
 )
 
 /*
@@ -39,7 +40,7 @@ func New(filter bloom.BloomFilter) DiskTable {
 	return s
 }
 
-func (s DiskTable) Write(i item) {
+func (s DiskTable) Write(i item.Item) {
 	offset := s.endP
 	s.endP += i.Len()
 	s.indexes.Set(i.Key, offset)
