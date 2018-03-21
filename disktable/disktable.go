@@ -9,6 +9,9 @@ import (
 	"github.com/jetuuuu/jstorage/item"
 	"github.com/jetuuuu/jstorage/utils/once"
 	"errors"
+	"sync/atomic"
+	"io"
+	"github.com/jetuuuu/jstorage/disktable/indexes"
 )
 
 /*
@@ -22,12 +25,14 @@ import (
 */
 
 var (
-	byteOrder = binary.LittleEndian
-	missKey = errors.New("miss key")
+	byteOrder    = binary.LittleEndian
+	missKeyError = errors.New("miss key")
+	closedError  = errors.New("file closed")
+	brokenFileError = errors.New("file broken")
 )
 
 type DiskTable struct {
-	indexes indexes
+	indexes indexes.Indexes
 	header *bytes.Buffer
 	body *bytes.Buffer
 	filter bloom.BloomFilter
@@ -36,6 +41,7 @@ type DiskTable struct {
 	name string
 	cmdChan chan cmd
 	once *once.Once
+	writable uint32
 }
 
 type cmd struct {
@@ -47,7 +53,7 @@ func New(to string, filter bloom.BloomFilter) *DiskTable {
 	s := DiskTable{
 		body: bytes.NewBuffer(nil),
 		header: bytes.NewBuffer(nil),
-		indexes: make(indexes),
+		indexes: make(indexes.Indexes),
 		filter: filter,
 		name: to,
 		cmdChan: make(chan cmd, 10),
@@ -57,17 +63,22 @@ func New(to string, filter bloom.BloomFilter) *DiskTable {
 	return &s
 }
 
-func (s *DiskTable) Write(i item.Item) {
+func (s *DiskTable) Write(i item.Item) error {
+	if atomic.LoadUint32(&s.writable) == 1 {
+		return closedError
+	}
 	offset := s.endP
 	s.endP += i.Len()
 	s.indexes.Set(i.Key, offset)
-	b := i.Bytes()
-	s.body.Write(b)
+	_, err := s.body.Write(i.Bytes())
+
+	return err
 }
 
-func (s DiskTable) Flush() error {
+func (s *DiskTable) Flush() error {
 	var err error
 	if s.file, err = os.Create(s.name); err == nil {
+		atomic.StoreUint32(&s.writable, 1)
 		bodyBytes := s.body.Bytes()
 
 		h1, h2 := murmur3.Sum128(bodyBytes)
@@ -81,6 +92,7 @@ func (s DiskTable) Flush() error {
 		indexesBytes := s.indexes.Bytes()
 		binary.Write(s.header, byteOrder, int32(len(indexesBytes)))
 		binary.Write(s.header, byteOrder, indexesBytes)
+		binary.Write(s.header, byteOrder, int32(len(bodyBytes)))
 
 		if _, err = s.file.Write(s.header.Bytes()); err == nil {
 			if _, err = s.file.Write(bodyBytes); err == nil {
@@ -101,12 +113,12 @@ func (s DiskTable) Get(key string) (item.Item, error) {
 
 	i := item.Item{}
 	if !s.filter.Test([]byte(key)) {
-		return i, missKey
+		return i, missKeyError
 	}
 
 	offset, ok := s.indexes.Get(key)
 	if !ok {
-		return i, missKey
+		return i, missKeyError
 	}
 
 	c := make(chan item.Item, 1)
@@ -124,4 +136,66 @@ func (s DiskTable) reader() {
 			cmd.respChan <- item.Load(f)
 		}
 	}()
+}
+
+func Load(from string) (*DiskTable , error) {
+	d := DiskTable{
+		name: from,
+		writable: 1,
+		once: once.New(),
+		cmdChan: make(chan cmd, 10),}
+
+	f, err := os.Open(from)
+	if err != nil {
+		return nil, err
+	}
+
+	rh := readerHelper{f}
+	var h1, h2 uint64
+	rh.Read(&h1)
+	rh.Read(&h2)
+
+	var (
+		bloomSize int32
+		bloomBits []byte
+	)
+	rh.Read(&bloomSize)
+	bloomBits = make([]byte, bloomSize)
+	rh.Read(&bloomBits)
+
+	var (
+		indexesSize int32
+		indexesBits []byte
+	)
+	rh.Read(&indexesSize)
+	indexesBits = make([]byte, indexesSize)
+	rh.Read(&indexesBits)
+
+	var (
+		bodySize int32
+		bodyBits []byte
+		)
+
+	rh.Read(&bodySize)
+	bodyBits = make([]byte, bodySize)
+	rh.Read(&bodyBits)
+
+	if _h1, _h2 := murmur3.Sum128(bodyBits); _h1 != h1 || _h2 != h2 {
+		return nil, brokenFileError
+	}
+
+	d.indexes = indexes.Load(indexesBits)
+	if filter, err := bloom.Load(bloomBits); err == nil {
+		d.filter = filter
+	}
+
+	return &d, nil
+}
+
+type readerHelper struct {
+	r io.Reader
+}
+
+func (rh readerHelper) Read(data interface{}) error {
+	return binary.Read(rh.r, byteOrder, data)
 }
