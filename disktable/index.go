@@ -10,3 +10,8 @@ func (i indexes) Bytes() []byte {
 func (i indexes) Set(key string, offset int) {
 	i[key] = offset
 }
+
+func (i indexes) Get(key string) (int, bool) {
+	offset, ok := i[key]
+	return offset, ok
+}

@@ -7,6 +7,8 @@ import (
 	"github.com/spaolacci/murmur3"
 	"github.com/jetuuuu/jstorage/bloom"
 	"github.com/jetuuuu/jstorage/item"
+	"github.com/jetuuuu/jstorage/utils/once"
+	"errors"
 )
 
 /*
@@ -19,7 +21,10 @@ import (
   data
 */
 
-var byteOrder = binary.LittleEndian
+var (
+	byteOrder = binary.LittleEndian
+	missKey = errors.New("miss key")
+)
 
 type DiskTable struct {
 	indexes indexes
@@ -28,14 +33,25 @@ type DiskTable struct {
 	filter bloom.BloomFilter
 	file *os.File
 	endP int
+	name string
+	cmdChan chan cmd
+	once *once.Once
 }
 
-func New(filter bloom.BloomFilter) *DiskTable {
+type cmd struct {
+	seek int64
+	respChan chan item.Item
+}
+
+func New(to string, filter bloom.BloomFilter) *DiskTable {
 	s := DiskTable{
 		body: bytes.NewBuffer(nil),
 		header: bytes.NewBuffer(nil),
 		indexes: make(indexes),
 		filter: filter,
+		name: to,
+		cmdChan: make(chan cmd, 10),
+		once: once.New(),
 	}
 
 	return &s
@@ -49,9 +65,9 @@ func (s *DiskTable) Write(i item.Item) {
 	s.body.Write(b)
 }
 
-func (s DiskTable) Flush(to string) error {
+func (s DiskTable) Flush() error {
 	var err error
-	if s.file, err = os.Create(to); err == nil {
+	if s.file, err = os.Create(s.name); err == nil {
 		bodyBytes := s.body.Bytes()
 
 		h1, h2 := murmur3.Sum128(bodyBytes)
@@ -73,9 +89,39 @@ func (s DiskTable) Flush(to string) error {
 		}
 
 		if err != nil {
-			err = os.Remove(to)
+			err = os.Remove(s.name)
 		}
 	}
 
 	return err
+}
+
+func (s DiskTable) Get(key string) (item.Item, error) {
+	s.once.Do(s.reader)
+
+	i := item.Item{}
+	if !s.filter.Test([]byte(key)) {
+		return i, missKey
+	}
+
+	offset, ok := s.indexes.Get(key)
+	if !ok {
+		return i, missKey
+	}
+
+	c := make(chan item.Item, 1)
+	s.cmdChan <- cmd{seek: int64(offset), respChan: c}
+	i = <- c
+	return i, nil
+}
+
+func (s DiskTable) reader() {
+	go func () {
+		f, _ := os.Open(s.name)
+		for {
+			cmd := <- s.cmdChan
+			f.Seek(cmd.seek, 0)
+			cmd.respChan <- item.Load(f)
+		}
+	}()
 }
