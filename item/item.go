@@ -23,7 +23,10 @@ func (i Item) Len() int {
 
 func (i Item) Bytes() []byte {
 	b := bytes.NewBuffer(nil)
-	binary.Write(b, binary.LittleEndian, i)
+
+	binary.Write(b, binary.LittleEndian, i.Status)
+	binary.Write(b, binary.LittleEndian, []byte(i.Key))
+	binary.Write(b, binary.LittleEndian, i.Value)
 
 	return b.Bytes()
 }

@@ -30,28 +30,28 @@ type DiskTable struct {
 	endP int
 }
 
-func New(filter bloom.BloomFilter) DiskTable {
+func New(filter bloom.BloomFilter) *DiskTable {
 	s := DiskTable{
 		body: bytes.NewBuffer(nil),
 		header: bytes.NewBuffer(nil),
+		indexes: make(indexes),
 		filter: filter,
 	}
 
-	return s
+	return &s
 }
 
-func (s DiskTable) Write(i item.Item) {
+func (s *DiskTable) Write(i item.Item) {
 	offset := s.endP
 	s.endP += i.Len()
 	s.indexes.Set(i.Key, offset)
-	s.body.Write(i.Bytes())
+	b := i.Bytes()
+	s.body.Write(b)
 }
 
-func (s DiskTable) Flush() error {
-	fileName := ""
-
+func (s DiskTable) Flush(to string) error {
 	var err error
-	if s.file, err = os.Create(fileName); err == nil {
+	if s.file, err = os.Create(to); err == nil {
 		bodyBytes := s.body.Bytes()
 
 		h1, h2 := murmur3.Sum128(bodyBytes)
@@ -73,7 +73,7 @@ func (s DiskTable) Flush() error {
 		}
 
 		if err != nil {
-			err = os.Remove(fileName)
+			err = os.Remove(to)
 		}
 	}
 

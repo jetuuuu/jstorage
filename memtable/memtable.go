@@ -1,7 +1,6 @@
 package memtable
 
 import (
-	"github.com/jetuuuu/jstorage/disktable"
 	"github.com/jetuuuu/jstorage/utils/spinlock"
 	"github.com/jetuuuu/jstorage/item"
 )
@@ -15,13 +14,6 @@ type MemTable struct {
 func New() *MemTable {
 	return &MemTable{s: spinlock.New(), m: make(map[string]item.Item), currentSize: 0}
 }
-
-func (mt MemTable) flush() disktable.DiskTable {
-	table := disktable.New(nil)
-	table.Flush()
-	return table
-}
-
 
 func (mt *MemTable) Set(key string, value []byte) {
 	mt.s.Lock()

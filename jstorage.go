@@ -1,4 +1,4 @@
-package jstoradge
+package jstorage
 
 import (
 	"github.com/jetuuuu/jstorage/memtable"
